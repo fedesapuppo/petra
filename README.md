@@ -21,6 +21,8 @@ bin/explore                       # read-only: dump both catalogues to tmp/
 bin/backup                        # snapshot the site to backups/<timestamp>/
 bin/sync-incremental              # dry run: show what would change
 bin/sync-incremental --apply      # apply the changes
+bin/prune-menus                   # dry run: nav links with nothing behind them
+bin/prune-menus --apply           # snapshot the menus, then remove them
 mise exec -- rspec                # tests
 ```
 
@@ -60,8 +62,8 @@ always empty.
 Prices are written as a bare number, with the currency in the `Precio`
 attribute ("USD 88000", "ARS 950000"). The store renders one currency symbol
 for all products, so a peso rental would otherwise read as dollars. The
-WooCommerce price element still shows the store symbol: fixing that properly
-needs a `functions.php` filter, which is outside what the REST API can reach.
+`wp/plugins/petra-listing-prices` plugin reads that attribute back and prints
+"USD 88.000" or "$ 950.000" per listing.
 
 Surfaces come from `roofed_surface` (Superficie Cubierta) and `surface`,
 falling back to `total_surface` (Superficie Terreno). Tokko uses 0.00 to mean
@@ -110,6 +112,16 @@ Hostinger throttles under sustained API load. The rebuild triggered 502s and
 refused connections for a couple of minutes afterwards. `HttpJson` retries
 connection-level failures (`RETRIABLE_ERRORS`) with exponential backoff, not
 just HTTP status codes.
+
+A price that reads wrong on the site but right over the API is worth checking
+in Appearance, Customize, Additional CSS before anything else. Two rules there
+prepended "US" to prices with a `::before`, which never appears in the DOM
+text, so fetching the page and reading `textContent` both looked correct while
+the rendered page was wrong.
+
+Elementor keeps page layouts in `_elementor_data`, protected post meta that the
+REST API will not read or write, and there is no Elementor route for document
+elements. Anything built in Elementor has to be changed in the editor.
 
 ## Scheduling
 
