@@ -1,10 +1,10 @@
-# Scheduled sync (not implemented)
+# Scheduled sync
 
-Everything needed to run the sync automatically. Deliberately left unbuilt:
-the sync currently runs by hand with `bin/sync-incremental --apply`.
+The sync runs daily from GitHub Actions: `.github/workflows/sync.yml`. It can
+still be run by hand with `bin/sync-incremental --apply`.
 
-Estimated effort to finish: 1-2 hours, most of it verifying the first
-unattended runs rather than writing the workflow.
+Remaining setup, all of it on GitHub rather than in this repo: push to a
+private repository and add the four secrets below.
 
 ## Cost
 
@@ -18,54 +18,27 @@ publish it.
 
 ## Workflow
 
-Create `.github/workflows/sync.yml`:
-
-```yaml
-name: Sync Tokko to WooCommerce
-
-on:
-  schedule:
-    - cron: "0 9 * * *"   # 06:00 in Argentina (UTC-3), before business hours
-  workflow_dispatch:       # allows a manual run from the Actions tab
-
-concurrency:
-  group: tokko-sync        # never let two runs overlap
-  cancel-in-progress: false
-
-jobs:
-  sync:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.3"   # no gems needed, stdlib only
-
-      - name: Run tests
-        run: rspec
-
-      - name: Sync
-        env:
-          TOKKO_API_KEY: ${{ secrets.TOKKO_API_KEY }}
-          WOO_SITE_URL: ${{ secrets.WOO_SITE_URL }}
-          WOO_CONSUMER_KEY: ${{ secrets.WOO_CONSUMER_KEY }}
-          WOO_CONSUMER_SECRET: ${{ secrets.WOO_CONSUMER_SECRET }}
-        run: ruby bin/sync-incremental --apply
-```
-
 `EnvFile.load` is a no-op when `.env` is absent, so the script reads the
-environment variables the workflow injects. No code change needed.
+environment variables the workflow injects. No code change was needed.
 
-`rspec` needs the gem in CI. Either add a minimal `Gemfile` with
-`gem "rspec"` plus `bundler-cache: true` on the setup-ruby step, or drop the
-test step and rely on running tests locally before pushing.
+The sync itself is stdlib only. The `Gemfile` exists solely so CI can run
+RSpec before the sync touches the live store; a failing suite stops the run
+before the WooCommerce step. `ruby-version` tracks the local 4.0 because
+`Gemfile.lock` was resolved with Bundler 4.
 
 ## Secrets
 
 Repository Settings, Secrets and variables, Actions. Add four repository
-secrets with the names above, values from `.env`.
+secrets, values from `.env`:
+
+    TOKKO_API_KEY
+    WOO_SITE_URL
+    WOO_CONSUMER_KEY
+    WOO_CONSUMER_SECRET
+
+Those are the only variables the incremental path reads. `WP_USER` and
+`PETRA_APLICATION_PASSWORD` belong to `Wp::Client`, which
+`bin/sync-incremental` never loads, so they are not needed as secrets.
 
 Rotate the keys currently in `.env` before this goes live: they were pasted
 into a chat transcript. Regenerate the WooCommerce pair under WooCommerce,
