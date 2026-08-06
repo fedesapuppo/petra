@@ -1,0 +1,66 @@
+#!/usr/bin/env ruby
+# Removes nav menu links that lead to an empty product category.
+#
+#   bin/prune-menus             dry run, changes nothing
+#   bin/prune-menus --apply     snapshots every menu item, then deletes
+#
+# The snapshot lands in backups/menus-<timestamp>.json and holds enough to
+# recreate anything removed by hand in WP admin.
+
+require_relative "../lib/env_file"
+EnvFile.load
+
+require_relative "../lib/wp/client"
+require_relative "../lib/wp/empty_menu_items"
+require_relative "../lib/woo/client"
+require "fileutils"
+
+apply = ARGV.include?("--apply")
+
+wp = Wp::Client.new
+woo = Woo::Client.new
+
+menus = wp.get("menus", context: "edit")
+items = wp.all("menu-items", context: "edit")
+categories = woo.all("products/categories")
+
+removable = Wp::EmptyMenuItems.new(items: items, categories: categories).call
+menu_names = menus.to_h { |m| [m["id"], m["name"]] }
+
+puts "#{items.size} menu items across #{menus.size} menus, #{categories.size} categories"
+puts
+
+if removable.empty?
+  puts "Nothing to remove: every category link has listings behind it."
+  exit
+end
+
+removable.group_by { |i| i["menus"] }.each do |menu_id, group|
+  puts "#{menu_names[menu_id]} (##{menu_id})"
+  group.each do |item|
+    puts format("  - %-24s %s", item["title"]["rendered"], item["url"])
+  end
+  puts
+end
+
+remaining = items.size - removable.size
+puts "Would remove #{removable.size}, leaving #{remaining}."
+
+unless apply
+  puts "\nDry run. Re-run with --apply to make the change."
+  exit
+end
+
+stamp = Time.now.strftime("%Y%m%d-%H%M%S")
+snapshot = File.expand_path("../backups/menus-#{stamp}.json", __dir__)
+FileUtils.mkdir_p(File.dirname(snapshot))
+File.write(snapshot, JSON.pretty_generate(items))
+puts "\nSnapshot: #{snapshot}"
+
+# Menu items have no trash, so WordPress rejects a delete without force.
+removable.each do |item|
+  wp.delete("menu-items/#{item["id"]}", force: true)
+  puts "  deleted ##{item["id"]} #{item["title"]["rendered"]}"
+end
+
+puts "\nRemoved #{removable.size} items."
