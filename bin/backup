@@ -1,0 +1,90 @@
+#!/usr/bin/env ruby
+# Full read-only snapshot of the site's current state, written to backups/<timestamp>/.
+# Run before any destructive sync. Never overwrites a previous snapshot.
+
+require_relative "../lib/env_file"
+EnvFile.load
+
+require_relative "../lib/woo/client"
+require_relative "../lib/http_json"
+require "fileutils"
+require "json"
+
+stamp = ENV.fetch("BACKUP_STAMP") { Time.now.strftime("%Y%m%d-%H%M%S") }
+dir = File.expand_path("../backups/#{stamp}", __dir__)
+raise "snapshot #{stamp} already exists" if Dir.exist?(dir)
+
+FileUtils.mkdir_p(dir)
+woo = Woo::Client.new
+site = ENV.fetch("WOO_SITE_URL").chomp("/")
+
+def save(dir, name, data)
+  File.write(File.join(dir, "#{name}.json"), JSON.pretty_generate(data))
+  count = data.is_a?(Array) ? data.size : 1
+  puts "  #{name}: #{count}"
+  data
+end
+
+puts "Snapshot -> backups/#{stamp}"
+
+puts "\nWooCommerce:"
+products = save(dir, "products", woo.all("products", status: "any"))
+save(dir, "product_categories", woo.all("products/categories"))
+save(dir, "product_tags", woo.all("products/tags"))
+
+attributes = save(dir, "product_attributes", woo.get("products/attributes"))
+terms = Array(attributes).to_h do |attribute|
+  [attribute["slug"], woo.all("products/attributes/#{attribute["id"]}/terms")]
+end
+save(dir, "product_attribute_terms", terms)
+
+# WooCommerce keys only authenticate wc/* namespaces, so wp/v2 is read unauthenticated.
+# That is enough for published content, which is what we need to be able to restore.
+puts "\nWordPress public content:"
+%w[pages posts media].each do |resource|
+  collected = []
+  page = 1
+
+  loop do
+    batch = HttpJson.get("#{site}/wp-json/wp/v2/#{resource}?per_page=100&page=#{page}")
+    break unless batch.is_a?(Array) && !batch.empty?
+
+    collected.concat(batch)
+    break if batch.size < 100
+
+    page += 1
+  end
+
+  save(dir, resource, collected)
+rescue HttpJson::Error => e
+  puts "  #{resource}: SKIPPED (#{e.message[0, 120]})"
+end
+
+# Flat, human-readable index so the snapshot is auditable without parsing JSON.
+index = products.map do |product|
+  {
+    id: product["id"],
+    name: product["name"],
+    slug: product["slug"],
+    permalink: product["permalink"],
+    status: product["status"],
+    price: product["regular_price"],
+    categories: Array(product["categories"]).map { |c| c["name"] },
+    images: Array(product["images"]).map { |i| i["src"] },
+    attributes: Array(product["attributes"]).to_h { |a| [a["name"], Array(a["options"]).join(", ")] }
+  }
+end
+save(dir, "index", index)
+
+File.write(File.join(dir, "README.txt"), <<~TEXT)
+  Snapshot taken #{Time.now}
+  Site: #{site}
+  Products: #{products.size}
+
+  Restoring: products.json holds every field WooCommerce returned, including
+  slugs, Yoast meta and image URLs. Images themselves live in the WP media
+  library and are NOT removed when a product is deleted, so image URLs in this
+  file stay valid after a destructive sync.
+TEXT
+
+puts "\nDone: backups/#{stamp}"

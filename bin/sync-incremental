@@ -1,0 +1,17 @@
+#!/usr/bin/env ruby
+# Steady-state sync. Applies only what changed in Tokko.
+#
+#   bin/sync-incremental             dry run, changes nothing
+#   bin/sync-incremental --apply     applies the plan
+
+require_relative "../lib/env_file"
+EnvFile.load
+
+require_relative "../lib/woo/incremental"
+
+begin
+  Woo::Incremental.new(dry_run: !ARGV.include?("--apply")).call
+rescue Woo::Incremental::Aborted => e
+  warn "\nABORTED: #{e.message}"
+  exit 1
+end

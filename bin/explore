@@ -1,0 +1,77 @@
+#!/usr/bin/env ruby
+# Read-only reconnaissance. Writes raw payloads to tmp/ and prints a summary,
+# so the field mapping is built against real data instead of assumptions.
+
+require_relative "../lib/env_file"
+EnvFile.load
+
+require_relative "../lib/tokko/client"
+require_relative "../lib/woo/client"
+require "fileutils"
+require "json"
+
+FileUtils.mkdir_p("tmp")
+
+def dump(name, data)
+  File.write("tmp/#{name}.json", JSON.pretty_generate(data))
+  puts "  -> tmp/#{name}.json"
+end
+
+def section(title)
+  puts "\n#{title}\n#{"-" * title.size}"
+end
+
+section "TOKKO"
+tokko = Tokko::Client.new
+first = tokko.page(limit: 3)
+puts "meta: #{first["meta"].inspect}"
+dump("tokko_sample", first)
+
+sample = first.fetch("objects", []).first
+if sample
+  puts "top-level keys: #{sample.keys.sort.join(", ")}"
+  puts "operations: #{JSON.generate(sample["operations"])[0, 400]}"
+  puts "photos: #{Array(sample["photos"]).size}, first: #{JSON.generate(Array(sample["photos"]).first)[0, 250]}"
+end
+
+all = tokko.all
+dump("tokko_all", all)
+puts "\ntotal fetched: #{all.size}"
+
+live = all.reject { |p| p["deleted_at"] }
+puts "with deleted_at: #{all.size - live.size}"
+
+def tally(rows, label)
+  puts "\n#{label}:"
+  yield(rows).tally.sort_by { |_, count| -count }.each { |value, count| puts "  #{count.to_s.rjust(4)}  #{value}" }
+end
+
+tally(live, "operation types") { |rows| rows.flat_map { |p| Array(p["operations"]).map { |o| o["operation_type"] } } }
+tally(live, "property types") { |rows| rows.map { |p| p.dig("type", "name") } }
+tally(live, "web publication") { |rows| rows.map { |p| p["web_price"].nil? ? "no web_price" : "has web_price" } }
+tally(live, "status") { |rows| rows.map { |p| p["status"] } }
+
+section "WOOCOMMERCE"
+woo = Woo::Client.new
+
+products = woo.all("products", status: "any")
+puts "products: #{products.size}"
+dump("woo_products", products)
+
+categories = woo.all("products/categories")
+puts "\ncategories:"
+categories.sort_by { |c| -c["count"].to_i }.each { |c| puts "  #{c["count"].to_s.rjust(4)}  #{c["name"]} (id #{c["id"]}, parent #{c["parent"]})" }
+dump("woo_categories", categories)
+
+attributes = woo.get("products/attributes")
+puts "\nglobal attributes:"
+Array(attributes).each { |a| puts "  #{a["name"]} (id #{a["id"]}, slug #{a["slug"]})" }
+dump("woo_attributes", attributes)
+
+if (product = products.first)
+  puts "\nsample product keys: #{product.keys.sort.join(", ")}"
+  puts "sample attributes: #{JSON.generate(product["attributes"])[0, 600]}"
+  puts "sample meta_data: #{JSON.generate(product["meta_data"])[0, 600]}"
+end
+
+puts "\nDone."

@@ -1,0 +1,43 @@
+#!/usr/bin/env ruby
+#
+# ONE-TIME MIGRATION. ALREADY RUN ON 2026-08-06. DO NOT RUN AGAIN.
+#
+# This trashes EVERY product on the site and recreates the catalogue from
+# scratch, re-importing all photos. It exists to establish the Tokko-linked
+# catalogue once, and is kept only for the record.
+#
+# For routine syncing use bin/sync-incremental, which updates in place and
+# leaves product URLs and photos alone.
+#
+#   bin/sync                        dry run, changes nothing
+#   bin/sync --canary --apply       create one property, delete nothing
+#   bin/sync --apply                the destructive rebuild (guarded below)
+
+require_relative "../lib/env_file"
+EnvFile.load
+
+require_relative "../lib/woo/sync"
+
+apply = ARGV.include?("--apply")
+canary = ARGV.include?("--canary")
+
+# The comment above is easy to miss when reaching for the obvious filename, so
+# the destructive path also refuses to run without a deliberate opt-in.
+if apply && !canary && ENV["REBUILD_EVERYTHING"] != "yes"
+  warn <<~WARNING
+    Refusing to run: this trashes every product and rebuilds the catalogue.
+
+    You almost certainly want:  bin/sync-incremental --apply
+
+    If a full rebuild really is intended, take a backup first (bin/backup) and
+    re-run with:  REBUILD_EVERYTHING=yes bin/sync --apply
+  WARNING
+  exit 1
+end
+
+begin
+  Woo::Sync.new(dry_run: !apply, canary:).call
+rescue Woo::Sync::Aborted => e
+  warn "\nABORTED: #{e.message}"
+  exit 1
+end
