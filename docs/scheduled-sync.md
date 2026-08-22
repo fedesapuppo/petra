@@ -1,7 +1,13 @@
 # Scheduled sync
 
-The sync runs daily from GitHub Actions: `.github/workflows/sync.yml`. It can
+The sync runs hourly from GitHub Actions: `.github/workflows/sync.yml`. It can
 still be run by hand with `bin/sync-incremental --apply`.
+
+An hour is the shortest useful interval because Tokko has no webhook for
+property changes. Its webhooks cover lead activity and the property importer's
+callback, not edits made in the panel, so the only way to learn about a change
+is to ask. A run where nothing changed reads the property list from Tokko and
+the product list from WooCommerce, then exits without writing.
 
 Remaining setup, all of it on GitHub rather than in this repo: push to a
 private repository and add the four secrets below.
@@ -9,8 +15,19 @@ private repository and add the four secrets below.
 ## Cost
 
 Free. GitHub Actions gives unlimited minutes to public repositories and 2,000
-minutes/month to private ones. A daily run of this sync uses roughly 1-2
-minutes when little has changed, so about 60 minutes/month against that quota.
+minutes/month to private ones. Minutes are billed per job, rounded up to the
+whole minute, so the number of runs matters more than what each one does:
+hourly is 730 runs/month against a 2,000 minute quota.
+
+Staying inside one billed minute per run is therefore the whole game, which is
+why the sync job installs no gems and runs no tests. It is checkout, Ruby, and
+a stdlib script: roughly 20-30 seconds. The suite moved to
+`.github/workflows/test.yml`, which runs on push, because the code cannot break
+between two hourly runs of an unchanged repository.
+
+Nothing else meters. The Tokko API is not billed per call and the sync makes
+two per run, and 24 products is not load worth worrying about on the
+WooCommerce side.
 
 Keep the repository private. It contains no secrets (`.env` is gitignored),
 but the sync logic reveals the catalogue structure and there is no reason to
@@ -21,10 +38,10 @@ publish it.
 `EnvFile.load` is a no-op when `.env` is absent, so the script reads the
 environment variables the workflow injects. No code change was needed.
 
-The sync itself is stdlib only. The `Gemfile` exists solely so CI can run
-RSpec before the sync touches the live store; a failing suite stops the run
-before the WooCommerce step. `ruby-version` tracks the local 4.0 because
-`Gemfile.lock` was resolved with Bundler 4.
+The sync itself is stdlib only, so the sync job sets `bundler: none` and calls
+`ruby` directly. The `Gemfile` exists for RSpec, which `test.yml` runs on push.
+Both workflows pin `ruby-version` to the local 4.0, and `test.yml` needs it
+because `Gemfile.lock` was resolved with Bundler 4.
 
 ## Secrets
 
@@ -47,12 +64,25 @@ update the secrets.
 
 ## Choosing the schedule
 
-Daily is the sensible default. Tokko is edited by hand a few times a week
-based on the `deleted_at` timestamps (which, despite the name, are
-last-modified, see below), so hourly would mostly do nothing.
+Hourly, at minute 17. Most runs do nothing: Tokko is edited by hand a few
+times a week, judging by the `deleted_at` timestamps (which, despite the name,
+are last-modified, see below). That is the point. The cost of a run that finds
+nothing is one billed minute, and the alternative is a client waiting a day to
+see a price change.
 
 GitHub's scheduled runs are queued, not guaranteed on time, and can be delayed
-by 5-20 minutes at peak. Irrelevant here.
+by 5-20 minutes at peak, which is also why the schedule avoids minute 0. In
+practice the guarantee is closer to "within the hour" than "on the hour".
+
+If the quota ever gets tight, the first thing to cut is the overnight runs
+rather than the frequency: nobody edits Tokko at 04:00. Restricting the cron to
+business hours drops it to about 420 runs/month.
+
+Two cheaper designs exist and neither is worth building yet. The API accepts
+Django-style filters (`inactiveproperty/?deleted_at__gte=...`), so a run could
+ask "anything since last time?" before doing real work, and a Cloudflare Worker
+on the free tier could take a webhook and fire `repository_dispatch`. Both save
+seconds, not money, at 24 properties.
 
 Scheduled workflows are disabled automatically after 60 days without repository
 activity. If the repo goes quiet, GitHub emails before disabling; re-enable in

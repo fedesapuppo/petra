@@ -125,5 +125,7 @@ elements. Anything built in Elementor has to be changed in the editor.
 
 ## Scheduling
 
-Not implemented. See `docs/scheduled-sync.md` for a ready-to-use GitHub
-Actions workflow and the decisions around it.
+Hourly, from `.github/workflows/sync.yml`. Tokko has no webhook for property
+edits, so the sync polls. Nothing runs until the repository is pushed to a
+private GitHub remote and the four secrets are set: see
+`docs/scheduled-sync.md` for that and for the decisions around it.
