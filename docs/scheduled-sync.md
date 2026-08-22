@@ -1,6 +1,6 @@
 # Scheduled sync
 
-The sync runs daily from GitHub Actions: `.github/workflows/sync.yml`. It can
+The sync runs hourly from GitHub Actions: `.github/workflows/sync.yml`. It can
 still be run by hand with `bin/sync-incremental --apply`.
 
 It polls rather than listens because Tokko has no webhook for property changes.
@@ -14,31 +14,33 @@ private repository and add the four secrets below.
 
 ## Cost
 
-Free, and the frequency is what decides how free. GitHub gives unlimited
-minutes to public repositories and 2,000 minutes/month to private ones. Minutes
-are billed per job rounded up to the whole minute, so a run that finishes in 16
-seconds still costs a full minute. The number of runs is the only thing that
-moves the bill:
+Nothing, because the repository is public. GitHub meters Actions only on
+private repositories, where the free allowance is 2,000 minutes/month and every
+job is rounded up to a whole minute: a 16-second run that changes nothing still
+costs one. That made hourly expensive while the repo was private, 730 minutes a
+month for 24 mostly pointless runs, and it is why the schedule went to daily
+for a few hours. Public removes the meter entirely, so the frequency is now a
+question of taste rather than budget.
 
-    daily             30 runs/month     1.5% of the quota
-    business hours   420 runs/month      21% of the quota
-    hourly           730 runs/month      36% of the quota
-
-Hourly ran for a day and worked, but spending a third of the quota to catch
-edits that happen a few times a week was not a trade worth making. Daily it is.
+That trade is deliberate and worth restating: the price of unlimited minutes is
+that anyone can read this code, the shape of the catalogue, and how the store is
+put together. The secrets stay secret, GitHub never exposes them to forks, and
+no credential has ever been committed. Keep it that way, because on a public
+repository a mistake is public immediately and permanently.
 
 The sync job still installs no gems and runs no tests, which keeps a run near
-20 seconds. That no longer saves minutes at this frequency, but it is what
-makes going back to hourly cheap if the catalogue ever justifies it. The suite
-lives in `.github/workflows/test.yml` and runs on push, which is when the code
-can actually break.
+20 seconds. The suite lives in `.github/workflows/test.yml` and runs on push,
+which is when the code can actually break. Forked pull requests run it without
+secrets, which is GitHub's default and the reason the sync itself never runs on
+`pull_request`.
 
-Nothing else meters. The Tokko API is not billed per call, and 28 products is
-not load worth worrying about on the WooCommerce side.
+Nothing else meters either. The Tokko API is not billed per call, and 28
+products is not load worth worrying about on the WooCommerce side.
 
-Keep the repository private. It contains no secrets (`.env` is gitignored),
-but the sync logic reveals the catalogue structure and there is no reason to
-publish it.
+The repository is public, which is what makes hourly free. Before it was
+flipped, its whole history was checked for committed credentials and the real
+WordPress username was removed from `.env.example`. Anything sensitive belongs
+in `.env` or in repository secrets, never in a tracked file.
 
 ## Workflow
 
@@ -71,23 +73,17 @@ update the secrets.
 
 ## Choosing the schedule
 
-Daily at 09:17 UTC, which is 06:17 in Argentina, before business hours. Tokko
-is edited by hand a few times a week, judging by the `deleted_at` timestamps
-(which, despite the name, are last-modified, see below), so most runs of any
-schedule find nothing.
+Hourly, at minute 17. Most runs find nothing: Tokko is edited by hand a few
+times a week, judging by the `deleted_at` timestamps (which, despite the name,
+are last-modified, see below). On a public repository those empty runs cost
+nothing, so the only thing frequency buys or wastes is freshness.
 
 GitHub's scheduler is best-effort, not a guarantee. Measured over 14
 consecutive hourly runs it did fire every slot, but never on time: 12 to 46
 minutes late, averaging around half an hour. It also ignored the cron entirely
-for the first 70 minutes after the repository was created. So the daily run
-lands somewhere in the 06:17-07:00 window in Argentina, and anything that needs
-to be live now wants `workflow_dispatch` from the Actions tab.
-
-Going back to hourly is one line, if the catalogue grows or someone starts
-editing Tokko all day. Restricting an hourly cron to business hours is the
-middle option at roughly 420 runs/month, since nobody edits at 04:00. Making
-the repository public removes the quota entirely, at the price of publishing
-the sync logic and the shape of the catalogue.
+for the first 70 minutes after the repository was created. So "hourly" means an
+edit is live within about an hour and a half, not within the hour, and anything
+that needs to be live now wants `workflow_dispatch` from the Actions tab.
 
 Two cheaper designs exist and neither is worth building. The API accepts
 Django-style filters (`inactiveproperty/?deleted_at__gte=...`), so a run could

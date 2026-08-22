@@ -125,7 +125,7 @@ elements. Anything built in Elementor has to be changed in the editor.
 
 ## Scheduling
 
-Daily at 06:17 Argentina time, from `.github/workflows/sync.yml`, against the
-private repo at github.com/fedesapuppo/petra. Tokko has no webhook for property
-edits, so the sync polls. Actions bills a whole minute per run whatever it
-does, which is what sets the frequency: see `docs/scheduled-sync.md`.
+Hourly, at 17 past, from `.github/workflows/sync.yml`. Tokko has no webhook for
+property edits, so the sync polls. This repository is public precisely so that
+those hourly runs are free: GitHub meters Actions only on private repos. Never
+commit a credential here. See `docs/scheduled-sync.md`.
