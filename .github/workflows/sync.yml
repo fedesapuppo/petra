@@ -2,7 +2,7 @@ name: Sync Tokko to WooCommerce
 
 on:
   schedule:
-    - cron: "17 * * * *"   # hourly. Tokko has no property webhook, so we poll.
+    - cron: "17 9 * * *"   # 06:17 in Argentina (UTC-3), before business hours
   workflow_dispatch:       # allows a manual run from the Actions tab
 
 permissions:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # No bundler: the sync is stdlib only, and the suite runs on push
-      # instead. Keeps an hourly run inside a single billed minute.
+      # instead. Keeps a run near 20s, so raising the frequency stays cheap.
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "4.0"
