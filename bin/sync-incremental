@@ -7,6 +7,7 @@
 require_relative "../lib/env_file"
 EnvFile.load
 
+require_relative "../lib/http_json"
 require_relative "../lib/woo/incremental"
 
 begin
@@ -14,4 +15,9 @@ begin
 rescue Woo::Incremental::Aborted => e
   warn "\nABORTED: #{e.message}"
   exit 1
+rescue HttpJson::Unreachable => e
+  # The host drops the odd connection from a datacenter IP, and the sync runs
+  # every hour. Whatever is left undone is picked up next time, so a blip is
+  # not worth a failed build. Anything the site actually answers still fails.
+  warn "\nSKIPPED: the site never answered, leaving this run for the next hour. #{e.message}"
 end
