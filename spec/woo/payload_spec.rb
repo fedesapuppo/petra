@@ -28,6 +28,19 @@ RSpec.describe Woo::Payload do
       end
     end
 
+    context "with a commercial premises for rent" do
+      it "assigns the parent and rental subcategory" do
+        property = {
+          "type" => { "name" => "Local" },
+          "operations" => [{ "operation_type" => "Alquiler", "prices" => [{ "currency" => "ARS", "price" => 400_000 }] }]
+        }
+
+        payload = described_class.new(property).call
+
+        expect(payload[:category_names]).to eq(["Locales", "Alquiler Locales"])
+      end
+    end
+
     context "with a plot of land" do
       it "assigns Terrenos regardless of the title wording" do
         property = {

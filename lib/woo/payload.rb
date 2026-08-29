@@ -12,7 +12,9 @@ module Woo
       ["Casa", "Alquiler"] => ["Casas", "Alquiler Casas"],
       ["Departamento", "Venta"] => ["Departamentos", "Venta Departamentos"],
       ["Departamento", "Alquiler"] => ["Departamentos", "Alquiler Departamentos"],
-      ["Terreno", "Venta"] => ["Terrenos", "Venta terrenos"]
+      ["Terreno", "Venta"] => ["Terrenos", "Venta terrenos"],
+      ["Local", "Venta"] => ["Locales", "Venta locales"],
+      ["Local", "Alquiler"] => ["Locales", "Alquiler Locales"]
     }.freeze
 
     def initialize(property)
