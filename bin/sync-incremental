@@ -16,8 +16,9 @@ rescue Woo::Incremental::Aborted => e
   warn "\nABORTED: #{e.message}"
   exit 1
 rescue HttpJson::Unreachable => e
-  # The host drops the odd connection from a datacenter IP, and the sync runs
-  # every hour. Whatever is left undone is picked up next time, so a blip is
-  # not worth a failed build. Anything the site actually answers still fails.
-  warn "\nSKIPPED: the site never answered, leaving this run for the next hour. #{e.message}"
+  # A datacenter IP sometimes gets no connection, and sometimes the edge
+  # answers it with a browser-check page instead of JSON. The sync runs
+  # every hour, so either blip is left for the next run. A real API
+  # rejection still fails the build.
+  warn "\nSKIPPED: the site gave no API response, leaving this run for the next hour. #{e.message}"
 end
