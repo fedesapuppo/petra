@@ -5,9 +5,10 @@ require "uri"
 module HttpJson
   Error = Class.new(StandardError)
 
-  # Deliberately not an Error: a host that never answers is not a rejected
-  # request, and the callers that log-and-continue on Error must not swallow
-  # it and spend the rest of the run retrying into a wall.
+  # Deliberately not an Error: a host that never answers, or that answers
+  # with a browser-check page instead of the API, is not a rejected request.
+  # Callers that log-and-continue on Error must not swallow it and spend the
+  # rest of the run retrying into a wall.
   Unreachable = Class.new(StandardError)
 
   # The host drops packets from a datacenter IP now and then. Ten seconds is
@@ -82,9 +83,20 @@ module HttpJson
 
       unreachable = false
       code = response.code.to_i
-      return parse(response.body) if code.between?(200, 299)
+      body = response.body.to_s
+      return parse(body) if code.between?(200, 299)
 
-      last_error = "HTTP #{code} for #{redact(uri)}: #{response.body.to_s[0, 500]}"
+      # Hostinger's hCDN sometimes serves a datacenter IP this instead of
+      # JSON: HTTP 403 and an HTML page with a meta refresh, whose script
+      # (/hcdn-cgi/jschallenge) only a browser can run. Another attempt from
+      # this process hits the same wall, so give up the way a dead connection
+      # does and let the next hour's runner try. A JSON 403 is WooCommerce
+      # itself refusing the call and still raises Error below.
+      if bot_challenge?(code, body)
+        raise Unreachable, "HTTP #{code} bot challenge for #{redact(uri)}: #{body[0, 500]}"
+      end
+
+      last_error = "HTTP #{code} for #{redact(uri)}: #{body[0, 500]}"
       raise Error, last_error unless RETRIABLE.include?(code)
     end
 
@@ -105,5 +117,17 @@ module HttpJson
     uri.to_s.gsub(/key=[^&]+/, "key=[REDACTED]")
   end
 
-  private_class_method :request, :parse, :redact
+  # The page captured from the failing runs: an HTML 403 whose head carries
+  # both a robots noindex and a meta refresh. WooCommerce's own 401/403 is
+  # JSON and never has that markup, and a plain "403 Forbidden" page lacks it.
+  def self.bot_challenge?(code, body)
+    return false unless code == 403
+
+    html = body.lstrip
+    html.start_with?("<!DOCTYPE html") &&
+      html.include?("noindex,nofollow") &&
+      html.include?('http-equiv="refresh"')
+  end
+
+  private_class_method :request, :parse, :redact, :bot_challenge?
 end
